@@ -1,0 +1,625 @@
+---
+title: "EBSeq_tomato"
+author: "Molly Davis"
+date: '2023-01-24'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Goal: Testing Ebseq on the TMNH time series to see if we get patterns. To identify changes in gene expression for tomato pollen between different time points.
+
+```{r}
+# Installing Required Packages (only done once)
+# source("https://bioconductor.org/biocLite.R")
+BiocManager::install("EBSeq")
+BiocManager::install("EBSeqHMM")
+BiocManager::install("DESeq2")
+install.packages("blockmodeling")
+```
+
+```{r}
+# Load Required Packages
+library(data.table)
+library(DESeq2)
+library(RColorBrewer)
+library(EBSeq)
+library(EBSeqHMM)
+```
+
+```{r}
+# The Purge
+rm(list = ls())
+```
+
+```{r}
+# Read in Table, Rows = each gene, Columns = each expt signal intensity (raw, TPM, etc).
+
+#SL4
+#samples <- read.table(file.path("/Users/mollydavis333/Desktop/salmon.merged.gene_counts-ver2.txt"),header = TRUE)
+
+
+#SL5
+samples <- read.table(file.path("/Users/mollydavis333/Desktop/mark-timeseries-SL5-salmoncounts.txt"),header = TRUE)
+head(samples)
+GeneExampleData=samples
+```
+
+```{r}
+# Assign Column 1 to be row names and then delete the column
+rownames(GeneExampleData) <- GeneExampleData[,1]
+GeneExampleData<- GeneExampleData[,-1]
+GeneExampleData
+```
+
+Test 1: Testing all of Heinz-Control conditions (times, control, heat stress).
+
+```{r}
+# There should be 12 Heinz-Control columns
+Heinz_control<- GeneExampleData[, c(1:3, 19:21, 37:39, 55:57)]
+Heinz_control
+
+str(Heinz_control)
+# Determines how many conditions there are, for example 4 and how many columns each condition includes. 
+CondVector=rep(paste("t",1:4,sep=""),each=3)
+print(CondVector)
+# Making time points for each of the samples
+Conditions=factor(CondVector, levels=c("t1","t2","t3","t4"))
+str(Conditions)
+
+# Downstream analysis by EBSeq-HMM requires the conditions to be specified as a factor. In particular,
+# levels of the factor need to be sorted along the time/spatial course
+levels(Conditions)
+
+# Convert data to a matrix
+geneMatrix = data.matrix(Heinz_control)
+
+# EBSeq-HMM requires library size factors to adjust for sequencing depth differences among different samples.
+Sizes=MedianNorm(geneMatrix)
+# Could also do quartiles:
+# QuantileNorm(GeneMat,.75)
+qSizes=QuantileNorm(geneMatrix,.75)
+
+# Collect the size factors as text files. Can see which normalizing has most effect.
+write.table(Sizes, "Normalized_Matrix_Heinz_control.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+write.table(qSizes, "QuantileMatrix_Heinz_control.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+
+# Data Visualization 
+
+EBSeqHMMGeneOut=EBSeqHMMTest(Data=geneMatrix, sizeFactors=Sizes, Conditions=Conditions,UpdateRd=50)
+
+#######   Clustering DE genes into expression paths ###########
+#To cluster DE genes into expression paths, we consider DE genes with confident assignments. By default,
+#a gene will be called as a confident assignment to its most likely path if its maximum PP is greater than
+#0.5. A user may change this threshold by specifying cutoff.
+
+GeneConfCalls=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05,cutoff=.5, OnlyDynamic=T)
+#str(GeneConfCalls$EachPath)
+print(GeneConfCalls$EachPath[1:4])
+
+Path4=GeneConfCalls$EachPath[["Up-Up-Down"]]
+print(Path4)
+#See how many genes in each cluster
+print(GeneConfCalls$NumEach)
+str(GeneConfCalls$EachPath)
+Heinz_Control_cluster<- GeneConfCalls$EachPathNames
+capture.output(GeneConfCalls$EachPathNames, file = "Heinz_control.txt")
+
+# Includes all 81 paths 
+AllPathsWithEE=GetAllPaths(EBSeqHMMGeneOut, OnlyDynamic = F)
+print(AllPathsWithEE)
+
+# Default includes dynamic paths (16 paths)
+AllPaths=GetAllPaths(EBSeqHMMGeneOut)
+print(AllPaths)
+
+GeneConfCallsTwoPaths=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05, Paths=AllPaths[c(1,16)])
+print(GeneConfCallsTwoPaths)
+
+GeneNormData=GetNormalizedMat(Heinz_control, Sizes)
+
+GeneOfInterest = GeneConfCallsTwoPaths$EachPathNames[['Up-Up-Up']]
+print(GeneOfInterest)
+
+par(mfrow=c(4,4))
+for(i in 1:12)PlotExp(GeneNormData, Conditions, Name=GeneOfInterest[i])
+
+par(mfrow=c(2,2))
+DenNHist(EBSeqHMMGeneOut, GeneLevel = T)
+
+par(mfrow=c(2,2))
+QQP(EBSeqHMMGeneOut)
+```
+
+Test 2: Testing all of Heinz-Stress conditions (times, control, heat stress).
+
+```{r}
+# There should be 12 Heinz-Stress columns
+Heinz_Stress<- GeneExampleData[, c(4:6, 22:24, 40:42, 58:60)]
+Heinz_Stress
+
+str(Heinz_Stress)
+# Determines how many conditions there are, for example 4 and how many columns each condition includes. 
+CondVector=rep(paste("t",1:4,sep=""),each=3)
+print(CondVector)
+# Making time points for each of the samples
+Conditions=factor(CondVector, levels=c("t1","t2","t3","t4"))
+str(Conditions)
+
+# Downstream analysis by EBSeq-HMM requires the conditions to be specified as a factor. In particular,
+# levels of the factor need to be sorted along the time/spatial course
+levels(Conditions)
+
+# Convert data to a matrix
+geneMatrix = data.matrix(Heinz_Stress)
+
+# EBSeq-HMM requires library size factors to adjust for sequencing depth differences among different samples.
+Sizes=MedianNorm(geneMatrix)
+# Could also do quartiles:
+# QuantileNorm(GeneMat,.75)
+qSizes=QuantileNorm(geneMatrix,.75)
+
+# Collect the size factors as text files. Can see which normalizing has most effect.
+write.table(Sizes, "Normalized_Matrix_Heinz_Stress.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+write.table(qSizes, "QuantileMatrix_Heinz_Stress.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+
+# Data Visualization 
+
+EBSeqHMMGeneOut=EBSeqHMMTest(Data=geneMatrix, sizeFactors=Sizes, Conditions=Conditions,UpdateRd=50)
+
+#######   Clustering DE genes into expression paths ###########
+#To cluster DE genes into expression paths, we consider DE genes with confident assignments. By default,
+#a gene will be called as a confident assignment to its most likely path if its maximum PP is greater than
+#0.5. A user may change this threshold by specifying cutoff.
+
+GeneConfCalls=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05,cutoff=.5, OnlyDynamic=T)
+#str(GeneConfCalls$EachPath)
+print(GeneConfCalls$EachPath[1:4])
+
+Path4=GeneConfCalls$EachPath[["Up-Up-Down"]]
+print(Path4)
+#See how many genes in each cluster
+print(GeneConfCalls$NumEach)
+str(GeneConfCalls$EachPath)
+Heinz_Stress_cluster <- GeneConfCalls$EachPathNames 
+capture.output(GeneConfCalls$EachPathNames, file = "Heinz_Stress.txt")
+
+# Includes all 81 paths 
+AllPathsWithEE=GetAllPaths(EBSeqHMMGeneOut, OnlyDynamic = F)
+print(AllPathsWithEE)
+
+# Default includes dynamic paths (16 paths)
+AllPaths=GetAllPaths(EBSeqHMMGeneOut)
+print(AllPaths)
+
+GeneConfCallsTwoPaths=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05, Paths=AllPaths[c(1,16)])
+print(GeneConfCallsTwoPaths)
+
+GeneNormData=GetNormalizedMat(Heinz_Stress, Sizes)
+
+GeneOfInterest = GeneConfCallsTwoPaths$EachPathNames[['Up-Up-Up']]
+print(GeneOfInterest)
+
+par(mfrow=c(4,4))
+for(i in 1:28)PlotExp(GeneNormData, Conditions, Name=GeneOfInterest[i])
+
+par(mfrow=c(2,2))
+DenNHist(EBSeqHMMGeneOut, GeneLevel = T)
+
+par(mfrow=c(2,2))
+QQP(EBSeqHMMGeneOut)
+```
+
+Test 3: Testing all of Nagcarlang-Control (times, control, heat stress).
+
+```{r}
+# There should be 12 Nagcarlang-Control columns
+Nagcarlang_Control<- GeneExampleData[, c(7:9, 25:27, 43:45, 61:63)]
+Nagcarlang_Control
+
+str(Nagcarlang_Control)
+# Determines how many conditions there are, for example 4 and how many columns each condition includes. 
+CondVector=rep(paste("t",1:4,sep=""),each=3)
+print(CondVector)
+# Making time points for each of the samples
+Conditions=factor(CondVector, levels=c("t1","t2","t3","t4"))
+str(Conditions)
+
+# Downstream analysis by EBSeq-HMM requires the conditions to be specified as a factor. In particular,
+# levels of the factor need to be sorted along the time/spatial course
+levels(Conditions)
+
+# Convert data to a matrix
+geneMatrix = data.matrix(Nagcarlang_Control)
+
+# EBSeq-HMM requires library size factors to adjust for sequencing depth differences among different samples.
+Sizes=MedianNorm(geneMatrix)
+# Could also do quartiles:
+# QuantileNorm(GeneMat,.75)
+qSizes=QuantileNorm(geneMatrix,.75)
+
+# Collect the size factors as text files. Can see which normalizing has most effect.
+write.table(Sizes, "Normalized_Matrix_Nagcarlang_Control.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+write.table(qSizes, "QuantileMatrix_Nagcarlang_Control.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+
+# Data Visualization 
+
+EBSeqHMMGeneOut=EBSeqHMMTest(Data=geneMatrix, sizeFactors=Sizes, Conditions=Conditions,UpdateRd=50)
+
+#######   Clustering DE genes into expression paths ###########
+#To cluster DE genes into expression paths, we consider DE genes with confident assignments. By default,
+#a gene will be called as a confident assignment to its most likely path if its maximum PP is greater than
+#0.5. A user may change this threshold by specifying cutoff.
+
+GeneConfCalls=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05,cutoff=.5, OnlyDynamic=T)
+#str(GeneConfCalls$EachPath)
+print(GeneConfCalls$EachPath[1:4])
+
+Path4=GeneConfCalls$EachPath[["Up-Up-Down"]]
+print(Path4)
+#See how many genes in each cluster
+print(GeneConfCalls$NumEach)
+str(GeneConfCalls$EachPath)
+Nagcarlang_Control_cluster<- GeneConfCalls$EachPathNames
+capture.output(GeneConfCalls$EachPathNames, file = "Nagcarlang_Control.txt")
+
+# Includes all 81 paths 
+AllPathsWithEE=GetAllPaths(EBSeqHMMGeneOut, OnlyDynamic = F)
+print(AllPathsWithEE)
+
+# Default includes dynamic paths (16 paths)
+AllPaths=GetAllPaths(EBSeqHMMGeneOut)
+print(AllPaths)
+
+GeneConfCallsTwoPaths=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05, Paths=AllPaths[c(1,16)])
+print(GeneConfCallsTwoPaths)
+
+GeneNormData=GetNormalizedMat(Nagcarlang_Control, Sizes)
+
+GeneOfInterest = GeneConfCallsTwoPaths$EachPathNames[['Up-Up-Up']]
+print(GeneOfInterest)
+
+par(mfrow=c(4,4))
+for(i in 1:10)PlotExp(GeneNormData, Conditions, Name=GeneOfInterest[i])
+
+par(mfrow=c(2,2))
+DenNHist(EBSeqHMMGeneOut, GeneLevel = T)
+
+par(mfrow=c(2,2))
+QQP(EBSeqHMMGeneOut)
+```
+
+Test 4: Testing all of Nagcarlang-Stress (times, control, heat stress).
+
+```{r}
+# There should be 12 Nagcarlang-Stress columns
+Nagcarlang_Stress<- GeneExampleData[, c(10:12, 28:30, 46:48, 64:66)]
+Nagcarlang_Stress
+
+str(Nagcarlang_Stress)
+# Determines how many conditions there are, for example 4 and how many columns each condition includes. 
+CondVector=rep(paste("t",1:4,sep=""),each=3)
+print(CondVector)
+# Making time points for each of the samples
+Conditions=factor(CondVector, levels=c("t1","t2","t3","t4"))
+str(Conditions)
+
+# Downstream analysis by EBSeq-HMM requires the conditions to be specified as a factor. In particular,
+# levels of the factor need to be sorted along the time/spatial course
+levels(Conditions)
+
+# Convert data to a matrix
+geneMatrix = data.matrix(Nagcarlang_Stress)
+
+# EBSeq-HMM requires library size factors to adjust for sequencing depth differences among different samples.
+Sizes=MedianNorm(geneMatrix)
+# Could also do quartiles:
+# QuantileNorm(GeneMat,.75)
+qSizes=QuantileNorm(geneMatrix,.75)
+
+# Collect the size factors as text files. Can see which normalizing has most effect.
+write.table(Sizes, "Normalized_Matrix_Nagcarlang_Stress.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+write.table(qSizes, "QuantileMatrix_Nagcarlang_Stress.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+
+# Data Visualization 
+
+EBSeqHMMGeneOut=EBSeqHMMTest(Data=geneMatrix, sizeFactors=Sizes, Conditions=Conditions,UpdateRd=50)
+
+#######   Clustering DE genes into expression paths ###########
+#To cluster DE genes into expression paths, we consider DE genes with confident assignments. By default,
+#a gene will be called as a confident assignment to its most likely path if its maximum PP is greater than
+#0.5. A user may change this threshold by specifying cutoff.
+
+GeneConfCalls=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05,cutoff=.5, OnlyDynamic=T)
+#str(GeneConfCalls$EachPath)
+print(GeneConfCalls$EachPath[1:4])
+
+Path4=GeneConfCalls$EachPath[["Up-Up-Down"]]
+print(Path4)
+#See how many genes in each cluster
+print(GeneConfCalls$NumEach)
+str(GeneConfCalls$EachPath)
+Nagcarlang_Stress_cluster<- GeneConfCalls$EachPathNames
+capture.output(GeneConfCalls$EachPathNames, file = "Nagcarlang_Stress.txt")
+
+# Includes all 81 paths 
+AllPathsWithEE=GetAllPaths(EBSeqHMMGeneOut, OnlyDynamic = F)
+print(AllPathsWithEE)
+
+# Default includes dynamic paths (16 paths)
+AllPaths=GetAllPaths(EBSeqHMMGeneOut)
+print(AllPaths)
+
+GeneConfCallsTwoPaths=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05, Paths=AllPaths[c(1,16)])
+print(GeneConfCallsTwoPaths)
+
+GeneNormData=GetNormalizedMat(Nagcarlang_Stress, Sizes)
+
+GeneOfInterest = GeneConfCallsTwoPaths$EachPathNames[['Up-Up-Up']]
+print(GeneOfInterest)
+
+par(mfrow=c(4,4))
+for(i in 1:26)PlotExp(GeneNormData, Conditions, Name=GeneOfInterest[i])
+
+par(mfrow=c(2,2))
+DenNHist(EBSeqHMMGeneOut, GeneLevel = T)
+
+par(mfrow=c(2,2))
+QQP(EBSeqHMMGeneOut)
+```
+
+Test 5: Testing all of Tamaulipas-Control (times, control, heat stress).
+
+```{r}
+# There should be 12 Tamaulipas-Control columns
+Tamaulipas_Control<- GeneExampleData[, c(13:15, 31:33, 49:51, 67:69)]
+Tamaulipas_Control
+
+str(Tamaulipas_Control)
+# Determines how many conditions there are, for example 4 and how many columns each condition includes. 
+CondVector=rep(paste("t",1:4,sep=""),each=3)
+print(CondVector)
+# Making time points for each of the samples
+Conditions=factor(CondVector, levels=c("t1","t2","t3","t4"))
+str(Conditions)
+
+# Downstream analysis by EBSeq-HMM requires the conditions to be specified as a factor. In particular,
+# levels of the factor need to be sorted along the time/spatial course
+levels(Conditions)
+
+# Convert data to a matrix
+geneMatrix = data.matrix(Tamaulipas_Control)
+
+# EBSeq-HMM requires library size factors to adjust for sequencing depth differences among different samples.
+Sizes=MedianNorm(geneMatrix)
+# Could also do quartiles:
+# QuantileNorm(GeneMat,.75)
+qSizes=QuantileNorm(geneMatrix,.75)
+
+# Collect the size factors as text files. Can see which normalizing has most effect.
+write.table(Sizes, "Normalized_Matrix_Tamaulipas_Control.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+write.table(qSizes, "QuantileMatrix_Tamaulipas_Control.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+
+# Data Visualization 
+
+EBSeqHMMGeneOut=EBSeqHMMTest(Data=geneMatrix, sizeFactors=Sizes, Conditions=Conditions,UpdateRd=50)
+
+#######   Clustering DE genes into expression paths ###########
+#To cluster DE genes into expression paths, we consider DE genes with confident assignments. By default,
+#a gene will be called as a confident assignment to its most likely path if its maximum PP is greater than
+#0.5. A user may change this threshold by specifying cutoff.
+
+GeneConfCalls=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05,cutoff=.5, OnlyDynamic=T)
+#str(GeneConfCalls$EachPath)
+print(GeneConfCalls$EachPath[1:4])
+
+Path4=GeneConfCalls$EachPath[["Up-Up-Down"]]
+print(Path4)
+#See how many genes in each cluster
+print(GeneConfCalls$NumEach)
+str(GeneConfCalls$EachPath)
+Tamaulipas_control_cluster<- GeneConfCalls$EachPathNames
+capture.output(GeneConfCalls$EachPathNames, file = "Tamaulipas_Control.txt")
+
+# Includes all 81 paths 
+AllPathsWithEE=GetAllPaths(EBSeqHMMGeneOut, OnlyDynamic = F)
+print(AllPathsWithEE)
+
+# Default includes dynamic paths (16 paths)
+AllPaths=GetAllPaths(EBSeqHMMGeneOut)
+print(AllPaths)
+
+GeneConfCallsTwoPaths=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05, Paths=AllPaths[c(1,16)])
+print(GeneConfCallsTwoPaths)
+
+GeneNormData=GetNormalizedMat(Tamaulipas_Control, Sizes)
+
+GeneOfInterest = GeneConfCallsTwoPaths$EachPathNames[['Up-Up-Up']]
+print(GeneOfInterest)
+
+par(mfrow=c(4,4))
+for(i in 1:8)PlotExp(GeneNormData, Conditions, Name=GeneOfInterest[i])
+
+par(mfrow=c(2,2))
+DenNHist(EBSeqHMMGeneOut, GeneLevel = T)
+
+par(mfrow=c(2,2))
+QQP(EBSeqHMMGeneOut)
+```
+
+Test 6: Testing all of Tamaulipas-Stress (times, control, heat stress).
+
+```{r}
+# There should be 12 Tamaulipas-Stress columns
+Tamaulipas_Stress<- GeneExampleData[, c(16:18, 34:36, 52:54, 70:72)]
+Tamaulipas_Stress
+
+str(Tamaulipas_Stress)
+# Determines how many conditions there are, for example 4 and how many columns each condition includes. 
+CondVector=rep(paste("t",1:4,sep=""),each=3)
+print(CondVector)
+# Making time points for each of the samples
+Conditions=factor(CondVector, levels=c("t1","t2","t3","t4"))
+str(Conditions)
+
+# Downstream analysis by EBSeq-HMM requires the conditions to be specified as a factor. In particular,
+# levels of the factor need to be sorted along the time/spatial course
+levels(Conditions)
+
+# Convert data to a matrix
+geneMatrix = data.matrix(Tamaulipas_Stress)
+
+# EBSeq-HMM requires library size factors to adjust for sequencing depth differences among different samples.
+Sizes=MedianNorm(geneMatrix)
+# Could also do quartiles:
+# QuantileNorm(GeneMat,.75)
+qSizes=QuantileNorm(geneMatrix,.75)
+
+# Collect the size factors as text files. Can see which normalizing has most effect.
+write.table(Sizes, "Normalized_Matrix_Tamaulipas_Stress.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+write.table(qSizes, "QuantileMatrix_Tamaulipas_Stress.txt", quote=FALSE, row.names=TRUE, col.names=TRUE, sep="\t")
+
+# Data Visualization 
+
+EBSeqHMMGeneOut=EBSeqHMMTest(Data=geneMatrix, sizeFactors=Sizes, Conditions=Conditions,UpdateRd=50)
+
+#######   Clustering DE genes into expression paths ###########
+#To cluster DE genes into expression paths, we consider DE genes with confident assignments. By default,
+#a gene will be called as a confident assignment to its most likely path if its maximum PP is greater than
+#0.5. A user may change this threshold by specifying cutoff.
+
+GeneConfCalls=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05,cutoff=.5, OnlyDynamic=T)
+#str(GeneConfCalls$EachPath)
+print(GeneConfCalls$EachPath[1:4])
+
+Path4=GeneConfCalls$EachPath[["Up-Up-Down"]]
+print(Path4)
+#See how many genes in each cluster
+print(GeneConfCalls$NumEach)
+str(GeneConfCalls$EachPath)
+Tamaulipas_Stress_cluster <- GeneConfCalls$EachPathNames
+capture.output(GeneConfCalls$EachPathNames, file = "Tamaulipas_Stress.txt")
+
+# Includes all 81 paths 
+AllPathsWithEE=GetAllPaths(EBSeqHMMGeneOut, OnlyDynamic = F)
+print(AllPathsWithEE)
+
+# Default includes dynamic paths (16 paths)
+AllPaths=GetAllPaths(EBSeqHMMGeneOut)
+print(AllPaths)
+
+GeneConfCallsTwoPaths=GetConfidentCalls(EBSeqHMMGeneOut, FDR=.05, Paths=AllPaths[c(1,16)])
+print(GeneConfCallsTwoPaths)
+
+GeneNormData=GetNormalizedMat(Tamaulipas_Stress, Sizes)
+
+GeneOfInterest = GeneConfCallsTwoPaths$EachPathNames[['Up-Up-Up']]
+print(GeneOfInterest)
+
+par(mfrow=c(4,4))
+for(i in 1:34)PlotExp(GeneNormData, Conditions, Name=GeneOfInterest[i])
+
+par(mfrow=c(2,2))
+DenNHist(EBSeqHMMGeneOut, GeneLevel = T)
+
+par(mfrow=c(2,2))
+QQP(EBSeqHMMGeneOut)
+```
+
+## Combine cluster files and create a dataframe:
+
+
+```{r}
+#Create a subset dataframe
+
+#Heinz Control dataframe 
+hcdf1 <- data.frame(Cluster_name  = c('Up-Up-Up'),SL5_gene_name = c(Heinz_Control_cluster$`Up-Up-Up`),Genotype = c('Heinz'),Temperature = c('C.28'))
+hcdf2 <- data.frame(Cluster_name  = c('Down-Up-Up'),SL5_gene_name = c(Heinz_Control_cluster$`Down-Up-Up`),Genotype = c('Heinz'),Temperature = c('C.28'))
+hcdf3 <- data.frame(Cluster_name  = c('Up-Down-Up'),SL5_gene_name = c(Heinz_Control_cluster$`Up-Down-Up`),Genotype = c('Heinz'),Temperature = c('C.28'))
+hcdf4 <- data.frame(Cluster_name  = c('Down-Down-Up'),SL5_gene_name = c(Heinz_Control_cluster$`Down-Down-Up`),Genotype = c('Heinz'),Temperature = c('C.28'))
+hcdf5 <- data.frame(Cluster_name  = c('Up-Up-Down'),SL5_gene_name = c(Heinz_Control_cluster$`Up-Up-Down`),Genotype = c('Heinz'),Temperature = c('C.28'))
+hcdf6 <- data.frame(Cluster_name  = c('Down-Up-Down'),SL5_gene_name = c(Heinz_Control_cluster$`Down-Up-Down`),Genotype = c('Heinz'),Temperature = c('C.28'))
+hcdf7 <- data.frame(Cluster_name  = c('Up-Down-Down'),SL5_gene_name = c(Heinz_Control_cluster$`Up-Down-Down`),Genotype = c('Heinz'),Temperature = c('C.28'))
+hcdf8 <- data.frame(Cluster_name  = c('Down-Down-Down'),SL5_gene_name = c(Heinz_Control_cluster$`Down-Down-Down`),Genotype = c('Heinz'),Temperature = c('C.28'))
+
+Heinz_control_df<- rbind.data.frame(hcdf1,hcdf2,hcdf3,hcdf4,hcdf5,hcdf6,hcdf7,hcdf8)
+Heinz_control_df
+
+#Heinz Stress dataframe 
+hsdf1 <- data.frame(Cluster_name  = c('Up-Up-Up'),SL5_gene_name = c(Heinz_Stress_cluster$`Up-Up-Up`),Genotype = c('Heinz'),Temperature = c('S.34'))
+hsdf2 <- data.frame(Cluster_name  = c('Down-Up-Up'),SL5_gene_name = c(Heinz_Stress_cluster$`Down-Up-Up`),Genotype = c('Heinz'),Temperature = c('S.34'))
+hsdf3 <- data.frame(Cluster_name  = c('Up-Down-Up'),SL5_gene_name = c(Heinz_Stress_cluster$`Up-Down-Up`),Genotype = c('Heinz'),Temperature = c('S.34'))
+hsdf4 <- data.frame(Cluster_name  = c('Down-Down-Up'),SL5_gene_name = c(Heinz_Stress_cluster$`Down-Down-Up`),Genotype = c('Heinz'),Temperature = c('S.34'))
+hsdf5 <- data.frame(Cluster_name  = c('Up-Up-Down'),SL5_gene_name = c(Heinz_Stress_cluster$`Up-Up-Down`),Genotype = c('Heinz'),Temperature = c('S.34'))
+hsdf6 <- data.frame(Cluster_name  = c('Down-Up-Down'),SL5_gene_name = c(Heinz_Stress_cluster$`Down-Up-Down`),Genotype = c('Heinz'),Temperature = c('S.34'))
+hsdf7 <- data.frame(Cluster_name  = c('Up-Down-Down'),SL5_gene_name = c(Heinz_Stress_cluster$`Up-Down-Down`),Genotype = c('Heinz'),Temperature = c('S.34'))
+hsdf8 <- data.frame(Cluster_name  = c('Down-Down-Down'),SL5_gene_name = c(Heinz_Stress_cluster$`Down-Down-Down`),Genotype = c('Heinz'),Temperature = c('S.34'))
+
+Heinz_stress_df<- rbind.data.frame(hsdf1,hsdf2,hsdf3,hsdf4,hsdf5,hsdf6,hsdf7,hsdf8)
+Heinz_stress_df
+
+#Nagcarlang Control dataframe  
+ncdf1 <- data.frame(Cluster_name  = c('Up-Up-Up'),SL5_gene_name = c(Nagcarlang_Control_cluster$`Up-Up-Up`),Genotype = c('Nagcarlang'),Temperature = c('C.28'))
+ncdf2 <- data.frame(Cluster_name  = c('Down-Up-Up'),SL5_gene_name = c(Nagcarlang_Control_cluster$`Down-Up-Up`),Genotype = c('Nagcarlang'),Temperature = c('C.28'))
+ncdf3 <- data.frame(Cluster_name  = c('Up-Down-Up'),SL5_gene_name = c(Nagcarlang_Control_cluster$`Up-Down-Up`),Genotype = c('Nagcarlang'),Temperature = c('C.28'))
+ncdf4 <- data.frame(Cluster_name  = c('Down-Down-Up'),SL5_gene_name = c(Nagcarlang_Control_cluster$`Down-Down-Up`),Genotype = c('Nagcarlang'),Temperature = c('C.28'))
+ncdf5 <- data.frame(Cluster_name  = c('Up-Up-Down'),SL5_gene_name = c(Nagcarlang_Control_cluster$`Up-Up-Down`),Genotype = c('Nagcarlang'),Temperature = c('C.28'))
+ncdf6 <- data.frame(Cluster_name  = c('Down-Up-Down'),SL5_gene_name = c(Nagcarlang_Control_cluster$`Down-Up-Down`),Genotype = c('Nagcarlang'),Temperature = c('C.28'))
+ncdf7 <- data.frame(Cluster_name  = c('Up-Down-Down'),SL5_gene_name = c(Nagcarlang_Control_cluster$`Up-Down-Down`),Genotype = c('Nagcarlang'),Temperature = c('C.28'))
+ncdf8 <- data.frame(Cluster_name  = c('Down-Down-Down'),SL5_gene_name = c(Nagcarlang_Control_cluster$`Down-Down-Down`),Genotype = c('Nagcarlang'),Temperature = c('C.28'))
+
+Nagcarlang_control_df<- rbind.data.frame(ncdf1,ncdf2,ncdf3,ncdf4,ncdf5,ncdf6,ncdf7,ncdf8)
+Nagcarlang_control_df
+
+#Nagcarlang Stress dataframe
+nsdf1 <- data.frame(Cluster_name  = c('Up-Up-Up'),SL5_gene_name = c(Nagcarlang_Stress_cluster$`Up-Up-Up`),Genotype = c('Nagcarlang'),Temperature = c('S.34'))
+nsdf2 <- data.frame(Cluster_name  = c('Down-Up-Up'),SL5_gene_name = c(Nagcarlang_Stress_cluster$`Down-Up-Up`),Genotype = c('Nagcarlang'),Temperature = c('S.34'))
+nsdf3 <- data.frame(Cluster_name  = c('Up-Down-Up'),SL5_gene_name = c(Nagcarlang_Stress_cluster$`Up-Down-Up`),Genotype = c('Nagcarlang'),Temperature = c('S.34'))
+nsdf4 <- data.frame(Cluster_name  = c('Down-Down-Up'),SL5_gene_name = c(Nagcarlang_Stress_cluster$`Down-Down-Up`),Genotype = c('Nagcarlang'),Temperature = c('S.34'))
+nsdf5 <- data.frame(Cluster_name  = c('Up-Up-Down'),SL5_gene_name = c(Nagcarlang_Stress_cluster$`Up-Up-Down`),Genotype = c('Nagcarlang'),Temperature = c('S.34'))
+nsdf6 <- data.frame(Cluster_name  = c('Down-Up-Down'),SL5_gene_name = c(Nagcarlang_Stress_cluster$`Down-Up-Down`),Genotype = c('Nagcarlang'),Temperature = c('S.34'))
+nsdf7 <- data.frame(Cluster_name  = c('Up-Down-Down'),SL5_gene_name = c(Nagcarlang_Stress_cluster$`Up-Down-Down`),Genotype = c('Nagcarlang'),Temperature = c('S.34'))
+nsdf8 <- data.frame(Cluster_name  = c('Down-Down-Down'),SL5_gene_name = c(Nagcarlang_Stress_cluster$`Down-Down-Down`),Genotype = c('Nagcarlang'),Temperature = c('S.34'))
+
+Nagcarlang_stress_df<- rbind.data.frame(nsdf1,nsdf2,nsdf3,nsdf4,nsdf5,nsdf6,nsdf7,nsdf8)
+Nagcarlang_stress_df
+
+#Tamaulipas Control Dataframe 
+tcdf1 <- data.frame(Cluster_name  = c('Up-Up-Up'),SL5_gene_name = c(Tamaulipas_control_cluster$`Up-Up-Up`),Genotype = c('Tamaulipas'),Temperature = c('C.28'))
+tcdf2 <- data.frame(Cluster_name  = c('Down-Up-Up'),SL5_gene_name = c(Tamaulipas_control_cluster$`Down-Up-Up`),Genotype = c('Tamaulipas'),Temperature = c('C.28'))
+tcdf3 <- data.frame(Cluster_name  = c('Up-Down-Up'),SL5_gene_name = c(Tamaulipas_control_cluster$`Up-Down-Up`),Genotype = c('Tamaulipas'),Temperature = c('C.28'))
+tcdf4 <- data.frame(Cluster_name  = c('Down-Down-Up'),SL5_gene_name = c(Tamaulipas_control_cluster$`Down-Down-Up`),Genotype = c('Tamaulipas'),Temperature = c('C.28'))
+tcdf5 <- data.frame(Cluster_name  = c('Up-Up-Down'),SL5_gene_name = c(Tamaulipas_control_cluster$`Up-Up-Down`),Genotype = c('Tamaulipas'),Temperature = c('C.28'))
+tcdf6 <- data.frame(Cluster_name  = c('Down-Up-Down'),SL5_gene_name = c(Tamaulipas_control_cluster$`Down-Up-Down`),Genotype = c('Tamaulipas'),Temperature = c('C.28'))
+tcdf7 <- data.frame(Cluster_name  = c('Up-Down-Down'),SL5_gene_name = c(Tamaulipas_control_cluster$`Up-Down-Down`),Genotype = c('Tamaulipas'),Temperature = c('C.28'))
+tcdf8 <- data.frame(Cluster_name  = c('Down-Down-Down'),SL5_gene_name = c(Tamaulipas_control_cluster$`Down-Down-Down`),Genotype = c('Tamaulipas'),Temperature = c('C.28'))
+
+Tamaulipas_control_df<- rbind.data.frame(tcdf1,tcdf2,tcdf3,tcdf4,tcdf5,tcdf6,tcdf7,tcdf8)
+Tamaulipas_control_df
+
+#Tamaulipas Stress Dataframe 
+tsdf1 <- data.frame(Cluster_name  = c('Up-Up-Up'),SL5_gene_name = c(Tamaulipas_Stress_cluster$`Up-Up-Up`),Genotype = c('Tamaulipas'),Temperature = c('S.34'))
+tsdf2 <- data.frame(Cluster_name  = c('Down-Up-Up'),SL5_gene_name = c(Tamaulipas_Stress_cluster$`Down-Up-Up`),Genotype = c('Tamaulipas'),Temperature = c('S.34'))
+tsdf3 <- data.frame(Cluster_name  = c('Up-Down-Up'),SL5_gene_name = c(Tamaulipas_Stress_cluster$`Up-Down-Up`),Genotype = c('Tamaulipas'),Temperature = c('S.34'))
+tsdf4 <- data.frame(Cluster_name  = c('Down-Down-Up'),SL5_gene_name = c(Tamaulipas_Stress_cluster$`Down-Down-Up`),Genotype = c('Tamaulipas'),Temperature = c('S.34'))
+tsdf5 <- data.frame(Cluster_name  = c('Up-Up-Down'),SL5_gene_name = c(Tamaulipas_Stress_cluster$`Up-Up-Down`),Genotype = c('Tamaulipas'),Temperature = c('S.34'))
+tsdf6 <- data.frame(Cluster_name  = c('Down-Up-Down'),SL5_gene_name = c(Tamaulipas_Stress_cluster$`Down-Up-Down`),Genotype = c('Tamaulipas'),Temperature = c('S.34'))
+tsdf7 <- data.frame(Cluster_name  = c('Up-Down-Down'),SL5_gene_name = c(Tamaulipas_Stress_cluster$`Up-Down-Down`),Genotype = c('Tamaulipas'),Temperature = c('S.34'))
+## This was null and had no data
+#tsdf8 <- data.frame(Cluster_name  = c('Down-Down-Down'),SL5_gene_name = c(Tamaulipas_Stress_cluster$`Down-Down-Down`),Genotype = c('Tamaulipas'),Temperature = c('S.34'))
+
+Tamaulipas_stress_df<- rbind.data.frame(tsdf1,tsdf2,tsdf3,tsdf4,tsdf5,tsdf6,tsdf7)
+Tamaulipas_stress_df
+
+#All data into one dataframe 
+all_data<- rbind.data.frame(Heinz_control_df, Heinz_stress_df, Nagcarlang_control_df, Nagcarlang_stress_df, Tamaulipas_control_df, Tamaulipas_stress_df)
+all_data
+
+#Save dataframe
+write.csv(all_data, "all_data_clusters.csv", row.names=FALSE)
+
+
+```
+

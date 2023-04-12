@@ -1,0 +1,200 @@
+---
+title: "Muday_SL5_RNAseq_Analysis"
+author: "Molly Davis"
+date: '2023-02-21'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introduction
+
+Is my RNA-seq experiment successful? The following markdown tries to determine whether the following RNA-seq data is successfully representing different experiments. The experiments include 3 genotypes (OE3, VF36, ARE) at control and stress temperatures (28C, 34C) in each time point (15min, 30min, 45min, 75min). To determine if the experiments were successful we will be using PCA plots. Variation between gene expression will help us determine if heat conditions have impacted gene expression levels over specific time points and genotypes. We use PCA plots because it clusters samples based on their similarity and is a popular technique for analyzing large data sets containing a high number of dimensions/features per observation.  
+
+The Goal: Create PCA plots for all 3 genotypes at control and stress temperatures in each time point (so, this would be 4 PCA plots).
+
+Link to Data sets: https://bitbucket.org/hotpollen/flavonoid-rnaseq/src/main/ 
+
+Code Resources:
+* http://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html
+* https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html
+* https://scienceparkstudygroup.github.io/rna-seq-lesson/05-descriptive-plots/index.html
+
+```{r}
+# The Purge 
+rm(list = ls())
+```
+
+```{r include=FALSE}
+# Installs 
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("DESeq2")
+install.packages('NMF')
+install.packages("htmltools")
+BiocManager::install('EnhancedVolcano')
+install.packages("dplyr")
+```
+
+```{r include=FALSE}
+# Libraries
+
+library("DESeq2")
+library(ggplot2)
+library(ggrepel)
+library(EnhancedVolcano)
+library(htmltools)
+library(DESeq2)
+library(stringr)
+library(dplyr)
+```
+
+```{r}
+# Functions
+source("Functions.R")
+```
+
+# Data Preparation
+
+```{r}
+# Normalization Comment: The DESeq2 model internally corrects for library size, so transformed or normalized values such as counts scaled by library size should not be used as input.
+# If you want to normalize use this command: dds <- estimateSizeFactors(dds)
+# extract the normalized counts with command: counts_normalised = counts(dds, normalized = TRUE)
+# Make sure to open Rproj. first then open markdown files to get the correct working directory: ~/Desktop/analysis-flavonoid-rnaseq/muday-144-analysis/.RData
+
+# Data input:
+# Normalization Comment: The DESeq2 model internally corrects for library size, so transformed or normalized values such as counts scaled by library size should not be used as input.
+# Make sure to open Rproj. first then open markdown files to get the correct working directory: ~/Desktop/analysis-flavonoid-rnaseq/muday-144-analysis/.RData
+rawCounts = read.csv('muday-144-SL5_counts-salmon.txt',sep = "\t",stringsAsFactors = F, header=T, check.names = FALSE, row.names = "gene_name")
+rawCounts = rawCounts[,-ncol(rawCounts)] # Remove description column
+head(rawCounts,2)
+sampleData = makeExperimentMetaDataFrame() # A function from Functions.R script
+head(sampleData,2)
+```
+
+# Sanity Check 
+
+```{r}
+# Put the columns of the count data in the same order as rows names of the sample mapping, then make sure it worked
+rawCounts <- rawCounts[,unique(rownames(sampleData))]
+check <- all(colnames(rawCounts) == rownames(sampleData))
+if(check == "TRUE"){
+print("The columns of the count data and row names from sampleData are in the same order. Please Continue the analysis!")
+}else {
+print("The count data and sampleData are not in the same order please fix this before continuing!")
+}
+```
+
+
+# Data separation 
+
+```{r}
+# Genotype Data from rawCounts
+OE3 <- select(rawCounts,contains("F"))
+head(OE3)
+VF36 <- select(rawCounts,contains("V"))
+head(VF36)
+are <- select(rawCounts,contains("A"))
+head(are)
+```
+
+```{r}
+# sampleData file genotypes
+sampleData$type <- rownames(sampleData)
+OE3_meta <- dplyr::filter(sampleData, grepl('F', type))
+sampleData$type <- rownames(sampleData)
+VF36_meta <- dplyr::filter(sampleData, grepl('V', type))
+sampleData$type <- rownames(sampleData)
+are_meta <- dplyr::filter(sampleData, grepl('A', type))
+```
+
+## Results 
+
+# Result 1: All of the data across all experiments 
+```{r}
+PCA_plots(rawCounts, sampleData, "All Genotypes in Temperature Clusters with each TimePoint")
+```
+
+
+```{r include=FALSE}
+pdf(file= "Muday-144-All-PCA-Plot.pdf", width=8, height=5) # Will create pdf of each plot and will be saved where the data files are located.
+PCA_plots(rawCounts, sampleData, "All Genotypes in Temperature Clusters with each TimePoint")
+dev.off()
+```
+# Result 1 Summary: When reviewing all the data together it is obvious that there is a separation between certain categories. But the clusters aren't how we would really want them to be. For example, 28C and 34C should have an obvious separation but we can see that they are combined for almost all experiemnts. At this point there is no difference besides just gene expression levels for each category. So let's subcategorise the time data to look at the data closer.  
+
+
+
+# Result 2: OE3 Genotype Data
+
+```{r}
+PCA_plots(OE3, OE3_meta, "OE3 Genotype and Temperature Clusters")
+```
+
+
+```{r include=FALSE}
+setwd("OE3_Results/OE3_PCA_Plots/")
+pdf(file= "Muday-144-OE3-PCA-Plot.pdf", width=8, height=5) # Will create pdf of each plot and will be saved where the data files are located.
+PCA_plots(OE3, OE3_meta, "OE3 Genotype and Temperature Clusters")
+dev.off()
+```
+# Result 2 Summary: After subcategorizing the data, we can see that there is still not a clear seperation of cluster based on different features.
+
+
+
+# Result 3: VF36 Genotype Data
+
+```{r}
+PCA_plots(VF36, VF36_meta, "VF36 Genotype and Temperature Clusters")
+```
+
+
+```{r include=FALSE}
+setwd("VF36_Results/VF36_PCA_Plots/")
+pdf(file= "Muday-144-VF36-PCA-Plot.pdf", width=8, height=5) # Will create pdf of each plot and will be saved where the data files are located.
+PCA_plots(VF36, VF36_meta, "VF36 Genotype and Temperature Clusters")
+dev.off()
+```
+# Result 3 Summary:  After subcategorizing the data, we can see that there is still not a clear seperation of cluster based on different features.
+
+
+
+# Result 4: ARE Data
+
+```{r}
+PCA_plots(are, are_meta, "ARE Genotype and Temperature Clusters")
+```
+
+
+```{r include=FALSE}
+setwd("ARE_Results/ARE_PCA_Plots/")
+pdf(file= "Muday-144-ARE-PCA-Plot.pdf", width=8, height=5) # Will create pdf of each plot and will be saved where the data files are located.
+PCA_plots(are, are_meta, "ARE Genotype and Temperature Clusters")
+dev.off()
+```
+# Result 4 Summary:  After subcategorizing the data, we can see that there is still not a clear seperation of cluster based on different features. But ARE has an interesting cluster for 45 and 75 minutes. 
+
+
+
+## Discussion
+
+The PCA Plots are great at clustering and identifying patterns for gene expression. All of the plots don't have exact separation that you would like to see in results. The goal was to answer these questions for the experiment to be successful:  
+
+*Are the samples from the same condition grouped together?
+*Are the first two principal components (PC1, PC2) explaining a major percentage of the total variation present in the data set?
+*Are the samples from different experimental conditions well separated by PC1 and PC2?
+
+If “yes” is the answer to these questions, then the experiment can be considered a success.
+
+If "no" is the answer to these questions, then the experiments can be considered unsuccessful and may require more extreme conditions or different features. 
+
+This study had issues with mislabeled samples. This could be an issue and also that the experiment could require more extreme heat conditions to see a large separation of gene expression. The results were very informative on how we should move forward with the rnaseq data or how to perform the experiment/study for next time. 
+
+## Conclusion
+
+* The RNA-experiment was not successful after reviewing the results from the PCA plot. 
+* There was not a very clear separation of the samples. 
+* There was not a major percentage of variation for any of the plots. 
+* There was no clear clustering except in maybe ARE (Result #4) for times 45min and 75min.

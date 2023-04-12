@@ -1,0 +1,173 @@
+---
+title: "muday-144-SL5-ARE-analysis"
+author: "Molly Davis"
+date: '2023-03-09'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+The Introduction states, explains, and justifies the question motivating the study. 
+
+State: 
+
+* The question you are trying to answer
+
+Explain:
+
+* Why the question is important.
+* How you intend to answer the question, e.g., the approach you're using. 
+* Provide links to external datasets you're using.
+
+The standard differential expression analysis steps are wrapped into a single function, DESeq.Results tables are generated using the function results, which extracts a results table with log2 fold changes, p values and adjusted p values. With no additional arguments to results, the log2 fold change and Wald test p value will be for the last variable in the design formula, and if this is a factor, the comparison will be the last level of this variable over the reference level (see previous note on factor levels). However, the order of the variables of the design do not matter so long as the user specifies the comparison to build a results table for, using the name or contrast arguments of results.
+
+A volcano plot can be generated from RNA-seq data and used to quickly visualize significant genes. Genes whose expression is decreased versus the comparison group are located to the left of zero on the x-axis while genes whose expression is increased are illustrated to the right of zero. Genes with statistically significant differential expression lie above a horizontal threshold. Closer to zero indicates less change while moving away from zero in either direction indicates more change. Volcano plots provide an effective means for visualizing the direction, magnitude, and significance of changes in gene expression.
+
+The Goal: Look at the analysis of DE genes with temperature within each genotype and make sure we have a final set of data. 3 pairwise comparisons at each temperature (so 6 comparisons). 
+
+Code Resources: http://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html
+```{r}
+# The Purge 
+rm(list = ls())
+```
+
+```{r include=FALSE}
+# Installs 
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("DESeq2")
+install.packages('NMF')
+install.packages("htmltools")
+BiocManager::install('EnhancedVolcano')
+install.packages("dplyr")
+install.packages("volcano3D")
+install_github("KatrionaGoldmann/volcano3D")
+```
+
+```{r include=FALSE}
+# Libraries
+
+library("DESeq2")
+library(ggplot2)
+library(EnhancedVolcano)
+library(htmltools)
+library(DESeq2)
+library(stringr)
+library(dplyr)
+library(devtools) 
+library(volcano3D)
+```
+
+```{r}
+# Functions
+source("Functions.R")
+```
+
+# Data Preparation
+
+```{r}
+# Data input:
+# Normalization Comment: The DESeq2 model internally corrects for library size, so transformed or normalized values such as counts scaled by library size should not be used as input.
+# Make sure to open Rproj. first then open markdown files to get the correct working directory: ~/Desktop/analysis-flavonoid-rnaseq/muday-144-analysis/.RData
+rawCounts = read.csv('../results/muday-144-SL5_counts-salmon.txt',sep = "\t",stringsAsFactors = F, header=T, check.names = FALSE, row.names = "gene_name")
+rawCounts = rawCounts[,-ncol(rawCounts)] # Remove description column
+head(rawCounts)
+ARE <- select(rawCounts,contains("A"))
+head(ARE)
+ARE <- rawCounts
+
+sampleData <- makeExperimentMetaDataFrame() # A function from Functions.R script
+head(sampleData)
+sampleData$type <- rownames(sampleData)
+ARE_meta <- dplyr::filter(sampleData, grepl('A', type))
+head(ARE_meta)
+sampleData <- ARE_meta
+```
+
+# Sanity Check 
+
+```{r}
+# Put the columns of the count data in the same order as rows names of the sample mapping, then make sure it worked
+rawCounts <- rawCounts[,unique(rownames(sampleData))]
+check <- all(colnames(rawCounts) == rownames(sampleData))
+if(check == "TRUE"){
+print("The columns of the count data and row names from sampleData are in the same order. Please Continue the analysis!")
+}else {
+print("The count data and sampleData are not in the same order please fix this before continuing!")
+}
+```
+
+# Data separation 
+
+```{r}
+# Genotype Data from rawCounts
+ARE_15min <- select(rawCounts,contains("15"))
+head(ARE_15min)
+ARE_30min <- select(rawCounts,contains("30"))
+head(ARE_30min)
+ARE_45min <- select(rawCounts,contains("45"))
+head(ARE_45min)
+ARE_75min <- select(rawCounts,contains("75"))
+head(ARE_75min)
+```
+
+
+```{r}
+# sampleData file genotypes
+sampleData$type <- rownames(sampleData)
+ARE_15min_meta <- dplyr::filter(sampleData, grepl('15', type))
+head(ARE_15min_meta)
+sampleData$type <- rownames(sampleData)
+ARE_30min_meta <- dplyr::filter(sampleData, grepl('30', type))
+head(ARE_30min_meta)
+sampleData$type <- rownames(sampleData)
+ARE_45min_meta <- dplyr::filter(sampleData, grepl('45', type))
+head(ARE_45min_meta)
+sampleData$type <- rownames(sampleData)
+ARE_75min_meta <- dplyr::filter(sampleData, grepl('75', type))
+head(ARE_75min_meta)
+```
+
+## Results
+
+
+
+```{r}
+setwd("ARE_Results/ARE_Volcano_Plots/")
+pdf(file= "Muday-144_ARE_15min_Volcano.pdf", width=12, height=10) # Will create pdf of each plot and will be saved where the data files are located.
+Gentoype_DE_Analysis(ARE_15min, ARE_15min_meta, "DESeq-ARE-15min.csv", "ARE Genotype Comparing 28C vs 34C at 15min.")
+dev.off()
+```
+
+
+
+```{r}
+setwd("ARE_Results/ARE_Volcano_Plots/")
+pdf(file= "Muday-144_ARE_30min_Volcano.pdf", width=12, height=10) # Will create pdf of each plot and will be saved where the data files are located.
+Gentoype_DE_Analysis(ARE_30min, ARE_30min_meta, "DESeq-ARE-30min.csv", "ARE Genotype Comparing 28C vs 34C at 30min.")
+dev.off()
+```
+
+
+
+
+```{r}
+setwd("ARE_Results/ARE_Volcano_Plots/")
+pdf(file= "Muday-144_ARE_45min_Volcano.pdf", width=12, height=10) # Will create pdf of each plot and will be saved where the data files are located.
+Gentoype_DE_Analysis(ARE_45min, ARE_45min_meta, "DESeq-ARE-45min.csv", "ARE Genotype Comparing treatment vs Control at 45min.")
+dev.off()
+```
+
+
+
+```{r}
+setwd("ARE_Results/ARE_Volcano_Plots/")
+pdf(file= "Muday-144_ARE_75min_Volcano.pdf", width=12, height=10) # Will create pdf of each plot and will be saved where the data files are located.
+Gentoype_DE_Analysis(ARE_75min, ARE_75min_meta, "DESeq-ARE-75min.csv", "ARE Genotype Comparing 28C vs 34C at 75min.")
+dev.off()
+```
